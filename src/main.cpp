@@ -1,6 +1,7 @@
 #include <WiFi.h>
 #include <IPAddress.h>
 #include <HTTPClient.h>
+#include <ArduinoJson.h>
 
 #include <Adafruit_Fingerprint.h>
 #include <ESP32Servo.h>
@@ -80,8 +81,8 @@ void fingerManager()
       return;
     }
 
-    sendRequest(getName(finger.fingerID), true /* VERIFICAR PUSH BUTTON */, 308);
-    Serial.println("Digital de " + getName(finger.fingerID) + " encontrada!");
+    sendRequest(finger.fingerID, true /* VERIFICAR PUSH BUTTON */, 308);
+    Serial.println("ID: " + String(finger.fingerID) + "... Validado!");
 
     open();
 
@@ -89,13 +90,25 @@ void fingerManager()
   }
 }
 
-bool sendRequest(String name, bool took, int port)
+bool sendRequest(int user_id, bool took, int port)
 {
   HTTPClient http;
 
-  http.begin("https://docs.google.com/forms/d/e/1FAIpQLSczsF3e2sIlJW1pv5M4xh0arTnAgQu9jG1RlhVZYEeMOv-adA/formResponse?ifq&entry.669983157=" + name + "&entry.1164638721=" + (took ? "Pegou" : "Guardou") + "%20a%20chave%20" + String(port) + "&submit=Submit");
+  http.begin("http://gate-keeper.learxd.dev:3000/alert/broadcast");
 
-  int httpCode = http.GET();
+  const size_t capacity = JSON_OBJECT_SIZE(3);
+
+  StaticJsonDocument<capacity> data;
+
+  data["user_id"] = user_id;
+  data["state"] = took;
+  data["id"] = port;
+
+  String payload;
+  serializeJson(data, payload);
+
+  http.addHeader("Content-Type", "application/json");
+  int httpCode = http.POST(payload);
 
   Serial.printf("[HTTP] Status Code: %d\n", httpCode);
 
@@ -106,23 +119,6 @@ bool sendRequest(String name, bool took, int port)
 
   http.end();
   return true;
-}
-
-String getName(int number)
-{
-  String nomes[] = {
-      "Miguel%20Pinheiro",
-      "Miguel%20BOB",
-      "Raissa",
-      "Roniery",
-      "Leandro",
-      "Gustavo",
-      "Julia"};
-  if (number > ((sizeof(nomes) / sizeof(nomes[0])) - 1) || number < 1)
-  {
-    return "Nao%20Registrado";
-  }
-  return nomes[number - 1];
 }
 
 void setup()
