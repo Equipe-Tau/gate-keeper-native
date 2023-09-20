@@ -5,6 +5,10 @@
 
 #include <Adafruit_Fingerprint.h>
 #include <ESP32Servo.h>
+#include <Ticker.h>
+
+Ticker watchdog;
+#define RESET_TIME 60 * 3
 
 #define MAX_LISTENERS 20
 
@@ -62,12 +66,19 @@ void close()
   digitalWrite(GREEN_LED, LOW);
 }
 
+void reset()
+{
+  Serial.println("Reiniciando...");
+  ESP.restart();
+}
+
 void fingerManager()
 {
   int result = finger.getImage();
   if (result == FINGERPRINT_OK)
   {
     Serial.println(F("Nova ocorrencia de dedo!"));
+
     if (finger.image2Tz() != FINGERPRINT_OK)
     {
       Serial.println(F("Erro na conversão da imagem!"));
@@ -81,16 +92,17 @@ void fingerManager()
       return;
     }
 
+    // TODO: IMPLEMENTAR A LOGICA DO PUSH BUTTON
     sendRequest(finger.fingerID, true /* VERIFICAR PUSH BUTTON */, 308);
-    Serial.println("ID: " + String(finger.fingerID) + "... Validado!");
-
     open();
+
+    Serial.println("ID: " + String(finger.fingerID) + "... Validado!");
 
     return;
   }
 }
 
-bool sendRequest(int user_id, bool took, int port)
+int sendRequest(int user_id, bool took, int port)
 {
   HTTPClient http;
 
@@ -114,17 +126,20 @@ bool sendRequest(int user_id, bool took, int port)
 
   if (httpCode <= 0)
   {
-    Serial.printf("[HTTP] A requisição GET falou, erro: %s\n", http.errorToString(httpCode).c_str());
+    Serial.printf("[HTTP] A requisição falhou, erro: %s\n", http.errorToString(httpCode).c_str());
   }
 
   http.end();
-  return true;
+  return httpCode;
 }
 
 void setup()
 {
+
   Serial.begin(115200);
   Serial.println(F("Inicializando"));
+
+  watchdog.attach(RESET_TIME, reset);
 
   xTaskCreatePinnedToCore(wifiHandler, "wifiHandler", 4096, NULL, 1, &WifiTask, 0);
 
@@ -232,10 +247,7 @@ void schedule()
       schedules[i] = {};
       if (currentSchedule.repeat)
       {
-        addSchedule(
-            currentSchedule.function,
-            currentSchedule.interval,
-            currentSchedule.repeat);
+        addSchedule(currentSchedule.function, currentSchedule.interval, currentSchedule.repeat);
         return;
       }
     }
