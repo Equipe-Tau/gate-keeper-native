@@ -42,6 +42,54 @@ typedef struct
 
 Schedule schedules[MAX_LISTENERS];
 
+void addSchedule(
+    Callable function,
+    int interval,
+    bool repeat)
+{
+  const int now = millis();
+  const Schedule newSchedule = {function, interval, (interval * 1000) + now, repeat};
+
+  for (int i = 0; i < MAX_LISTENERS; i++)
+  {
+    const Schedule currentSchedule = schedules[i];
+
+    if (currentSchedule.interval == 0 || currentSchedule.execute <= now)
+    {
+      schedules[i] = newSchedule;
+      return;
+    }
+  }
+
+  Serial.println("O número de MAX_LISTENERS foi excedido. Caso necessário aumente o número!");
+}
+
+void schedule()
+{
+  int now = millis();
+
+  for (int i = 0; i < MAX_LISTENERS; i++)
+  {
+    const Schedule currentSchedule = schedules[i];
+    if (currentSchedule.interval && currentSchedule.execute <= now)
+    {
+      currentSchedule.function(); // TODO: ADD ARGUMENTS
+      schedules[i] = {};
+      if (currentSchedule.repeat)
+      {
+        addSchedule(currentSchedule.function, currentSchedule.interval, currentSchedule.repeat);
+        return;
+      }
+    }
+  }
+}
+
+void close()
+{
+  lockServo.write(LOCK_SERVO_CLOSED);
+  digitalWrite(GREEN_LED, LOW);
+}
+
 void open()
 {
   lockServo.write(LOCK_SERVO_OPENED);
@@ -60,46 +108,10 @@ void alert()
   addSchedule(disableAlert, 5, false);
 }
 
-void close()
-{
-  lockServo.write(LOCK_SERVO_CLOSED);
-  digitalWrite(GREEN_LED, LOW);
-}
-
 void reset()
 {
   Serial.println("Reiniciando...");
   ESP.restart();
-}
-
-void fingerManager()
-{
-  int result = finger.getImage();
-  if (result == FINGERPRINT_OK)
-  {
-    Serial.println(F("Nova ocorrencia de dedo!"));
-
-    if (finger.image2Tz() != FINGERPRINT_OK)
-    {
-      Serial.println(F("Erro na conversão da imagem!"));
-      return;
-    }
-
-    if (finger.fingerFastSearch() != FINGERPRINT_OK)
-    {
-      Serial.println(F("Dedo não encontrado!"));
-      alert();
-      return;
-    }
-
-    // TODO: IMPLEMENTAR A LOGICA DO PUSH BUTTON
-    sendRequest(finger.fingerID, true /* VERIFICAR PUSH BUTTON */, 308);
-    open();
-
-    Serial.println("ID: " + String(finger.fingerID) + "... Validado!");
-
-    return;
-  }
 }
 
 int sendRequest(int user_id, bool took, int port)
@@ -133,44 +145,34 @@ int sendRequest(int user_id, bool took, int port)
   return httpCode;
 }
 
-void setup()
+void fingerManager()
 {
-
-  Serial.begin(115200);
-  Serial.println(F("Inicializando"));
-
-  watchdog.attach(RESET_TIME, reset);
-
-  xTaskCreatePinnedToCore(wifiHandler, "wifiHandler", 4096, NULL, 1, &WifiTask, 0);
-
-  pinMode(RED_LED, OUTPUT);
-  pinMode(GREEN_LED, OUTPUT);
-
-  Serial.println(F("Iniciando sensor de impressão digital..."));
-  finger.begin(57600);
-  if (finger.verifyPassword())
+  int result = finger.getImage();
+  if (result == FINGERPRINT_OK)
   {
-    Serial.println(F("Sensor de impressão digital encontrado!"));
-  }
-  else
-  {
-    Serial.println(F("Não foi possível encontrar o sensor de impressão digital :("));
+    Serial.println(F("Nova ocorrencia de dedo!"));
+
+    if (finger.image2Tz() != FINGERPRINT_OK)
+    {
+      Serial.println(F("Erro na conversão da imagem!"));
+      return;
+    }
+
+    if (finger.fingerFastSearch() != FINGERPRINT_OK)
+    {
+      Serial.println(F("Dedo não encontrado!"));
+      alert();
+      return;
+    }
+
+    // TODO: IMPLEMENTAR A LOGICA DO PUSH BUTTON
+    sendRequest(finger.fingerID, true /* VERIFICAR PUSH BUTTON */, 308);
+    open();
+
+    Serial.println("ID: " + String(finger.fingerID) + "... Validado!");
+
     return;
   }
-
-  Serial.println(F("Iniciando servo..."));
-
-  lockServo.attach(LOCK_SERVO_PORT);
-  lockServo.write(LOCK_SERVO_CLOSED);
-
-  Serial.println(F("OK!"));
-}
-
-void loop()
-{
-  fingerManager();
-  schedule(); // ATUALIZAR TAREFAS
-  delay(10);
 }
 
 void wifiHandler(void *parameter)
@@ -212,44 +214,42 @@ void wifiHandler(void *parameter)
   }
 }
 
-void addSchedule(
-    Callable function,
-    int interval,
-    bool repeat)
+void setup()
 {
-  const int now = millis();
-  const Schedule newSchedule = {function, interval, (interval * 1000) + now, repeat};
 
-  for (int i = 0; i < MAX_LISTENERS; i++)
+  Serial.begin(115200);
+  Serial.println(F("Inicializando"));
+
+  watchdog.attach(RESET_TIME, reset);
+
+  xTaskCreatePinnedToCore(wifiHandler, "wifiHandler", 4096, NULL, 1, &WifiTask, 0);
+
+  pinMode(RED_LED, OUTPUT);
+  pinMode(GREEN_LED, OUTPUT);
+
+  Serial.println(F("Iniciando sensor de impressão digital..."));
+  finger.begin(57600);
+  if (finger.verifyPassword())
   {
-    const Schedule currentSchedule = schedules[i];
-
-    if (currentSchedule.interval == 0 || currentSchedule.execute <= now)
-    {
-      schedules[i] = newSchedule;
-      return;
-    }
+    Serial.println(F("Sensor de impressão digital encontrado!"));
+  }
+  else
+  {
+    Serial.println(F("Não foi possível encontrar o sensor de impressão digital :("));
+    return;
   }
 
-  Serial.println("O número de MAX_LISTENERS foi excedido. Caso necessário aumente o número!");
+  Serial.println(F("Iniciando servo..."));
+
+  lockServo.attach(LOCK_SERVO_PORT);
+  lockServo.write(LOCK_SERVO_CLOSED);
+
+  Serial.println(F("OK!"));
 }
 
-void schedule()
+void loop()
 {
-  int now = millis();
-
-  for (int i = 0; i < MAX_LISTENERS; i++)
-  {
-    const Schedule currentSchedule = schedules[i];
-    if (currentSchedule.interval && currentSchedule.execute <= now)
-    {
-      currentSchedule.function(); // TODO: ADD ARGUMENTS
-      schedules[i] = {};
-      if (currentSchedule.repeat)
-      {
-        addSchedule(currentSchedule.function, currentSchedule.interval, currentSchedule.repeat);
-        return;
-      }
-    }
-  }
+  fingerManager();
+  schedule(); // ATUALIZAR TAREFAS
+  delay(10);
 }
