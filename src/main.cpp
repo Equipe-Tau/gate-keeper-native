@@ -30,6 +30,8 @@ Servo lockServo;
 
 TaskHandle_t WifiTask;
 
+bool wait = false;
+
 typedef void (*Callable)();
 
 typedef struct
@@ -86,12 +88,14 @@ void schedule()
 
 void close()
 {
+  wait = false;
   lockServo.write(LOCK_SERVO_CLOSED);
   digitalWrite(GREEN_LED, LOW);
 }
 
 void open()
 {
+  wait = true;
   lockServo.write(LOCK_SERVO_OPENED);
   digitalWrite(GREEN_LED, HIGH);
   addSchedule(close, 5, false);
@@ -166,7 +170,7 @@ void fingerManager()
     }
 
     // TODO: IMPLEMENTAR A LOGICA DO PUSH BUTTON
-    sendRequest(finger.fingerID, true /* VERIFICAR PUSH BUTTON */, 308);
+    // sendRequest(finger.fingerID, true, 308);
     open();
 
     Serial.println("ID: " + String(finger.fingerID) + "... Validado!");
@@ -249,7 +253,11 @@ void setup()
 
 void loop()
 {
-  fingerManager();
+  if (!wait)
+  {
+    fingerManager();
+  }
+
   schedule(); // ATUALIZAR TAREFAS
   delay(10);
 }
